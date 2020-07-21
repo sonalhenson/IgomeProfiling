@@ -101,7 +101,7 @@ def run_first_phase(fastq_path, first_phase_output_path, logs_dir, barcode2sampl
                     file_path = f'{dir_path}/{sample_name}_mapitope.faa'
                     output_file_path = f'{dir_path}/{sample_name}_unique_rpm_mapitope.faa'
                     done_path = f'{logs_dir}/02_{sample_name}_mapitope_done_collapsing.txt'
-                    parameters = [file_path, output_file_path, done_path, '--rpm', f'{first_phase_output_path}/rpm_factors.txt']
+                    parameters = [file_path, output_file_path, done_path, '--rpm', f'{first_phase_output_path}/rpm_factors_mapitope.txt']
                     fetch_cmd(f'{src_dir}/reads_filtration/count_and_collapse_duplicates.py', parameters, verbose, error_path, done_path)
                     num_of_expected_results += 1
 
