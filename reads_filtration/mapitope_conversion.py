@@ -70,6 +70,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('reads_filtration_path', help='path to reads_filtration folder')
     parser.add_argument('barcode2samplename_path', help='path to barcode2sample file')
+    parser.add_argument('done_file_path', help='A path to a file that signals that the script finished running successfully.')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase output verbosity')
     args = parser.parse_args()
 
@@ -80,6 +81,4 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger('main')
 
-    done_file_path =''
-
-    mapitope_convert_all_samples(args.reads_filtration_path, args.barcode2samplename_path, done_file_path,sys.argv)
+    mapitope_convert_all_samples(args.reads_filtration_path, args.barcode2samplename_path, args.done_file_path,sys.argv)
