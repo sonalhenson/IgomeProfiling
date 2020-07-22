@@ -10,10 +10,10 @@ computePSSM_cutoffs::computePSSM_cutoffs(vector<PSSM> & PSSM_array,
 	size_t TotalNumberOfRandoSeq,
 	alphabet& alph,
 	const string & CutofsPerPSSM_FileName,
-	int totalMemes) : 
-	_PSSM_array(PSSM_array), 
-	_totalNumberOfRandoSeq(TotalNumberOfRandoSeq), 
-	_alph(alph), 
+	int totalMemes) :
+	_PSSM_array(PSSM_array),
+	_totalNumberOfRandoSeq(TotalNumberOfRandoSeq),
+	_alph(alph),
 	_CutofsPerPSSM_FileName(CutofsPerPSSM_FileName),
 	_totalMemes(totalMemes)
 {
@@ -49,9 +49,8 @@ void computePSSM_cutoffs::generateRandomPeptides() {
 	}
 }
 
-double get_percentile_cutoff(const vector<double> & scores, double TopPercent)
-{
-	vector <double> sorted_vector = scores;
+double get_percentile_cutoff(const vector<double> & scores, double TopPercent) {
+	vector<double> sorted_vector = scores;
 	sort(sorted_vector.begin(), sorted_vector.end());
 	double TopPercentSize = TopPercent*scores.size();
 	if (floor(TopPercentSize) == 0) {
@@ -64,16 +63,13 @@ double get_percentile_cutoff(const vector<double> & scores, double TopPercent)
 }
 
 void computePSSM_cutoffs::computecCutoffsBasedOnRandomPeptides() {
-	
-	for (size_t i = 0; i<_PSSM_array.size(); ++i)
-	{
-		for (auto SeqDataset = _randomPeptideDataSet.begin(); SeqDataset != _randomPeptideDataSet.end(); ++SeqDataset)
-		{
-			vector<double> tmp;
-			PSSM_scoresFromSeqVector(_PSSM_array[i], SeqDataset->second._simulatedSequences, tmp);
-			_PSSM_array[i].dist_of_random_peptides_scores[SeqDataset->first] = tmp;
+	for (size_t i = 0; i<_PSSM_array.size(); ++i) { // going over all the many PSSMs
+		for (auto SeqDataset = _randomPeptideDataSet.begin(); SeqDataset != _randomPeptideDataSet.end(); ++SeqDataset) {// going over the pairs <configuration such as C12C, the corresponding random sequences which is a class that holds the random sequences and more>
+			vector<double> randomScores;
+			PSSM_scoresFromSeqVector(_PSSM_array[i], SeqDataset->second._simulatedSequences, randomScores);
+			_PSSM_array[i].dist_of_random_peptides_scores[SeqDataset->first] = randomScores;
 		}
-		cout << "Score PSSM " << i << " for random dataset" << endl;
+		//cout << "Score PSSM " << i << " for random dataset" << endl;
 	}
 	
 	// determin cutoff for each seq type and print to file
@@ -90,7 +86,7 @@ void computePSSM_cutoffs::computecCutoffsBasedOnRandomPeptides() {
 		// go over all seq types
 		for (auto SeqTypeRandomPeptidesScores = _PSSM_array[i].dist_of_random_peptides_scores.begin(); SeqTypeRandomPeptidesScores != _PSSM_array[i].dist_of_random_peptides_scores.end(); ++SeqTypeRandomPeptidesScores)
 		{
-			vector <double> scores = SeqTypeRandomPeptidesScores->second;
+			vector<double> scores = SeqTypeRandomPeptidesScores->second;
 			string seqType = SeqTypeRandomPeptidesScores->first;
 			double cutoff = get_percentile_cutoff(scores, PercentOfAcceptedPeptidesPerType);
 			_PSSM_array[i].set_SeqTypCutoff(seqType, cutoff);

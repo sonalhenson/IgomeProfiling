@@ -17,6 +17,7 @@ def run_pipeline(fastq_path, barcode2samplename_path, samplename2biologicalcondi
                  max_number_of_cluster_members_per_sample, max_number_of_cluster_members_per_bc,
                  allowed_gap_frequency, concurrent_cutoffs, meme_split_size, number_of_random_pssms,
                  rank_method, tfidf_method, tfidf_factor, shuffles,
+                 number_of_hyperparams_configuration_to_sample,
                  run_summary_path, error_path, queue, verbose, argv):
 
     os.makedirs(os.path.split(run_summary_path)[0], exist_ok=True)
@@ -27,6 +28,7 @@ def run_pipeline(fastq_path, barcode2samplename_path, samplename2biologicalcondi
 
     start_time = datetime.datetime.now()
 
+    # e.g., /groups/pupko/orenavr2/igomeProfilingPipeline/experiments/exp12/analysis
     exp_name = analysis_dir.rstrip('/').split('/')[-2]
 
     # output folders of the different modules
@@ -46,7 +48,7 @@ def run_pipeline(fastq_path, barcode2samplename_path, samplename2biologicalcondi
                              '--gz' if gz else '', f'--error_path {error_path}', '-v' if verbose else '']
         cmd = submit_pipeline_step(f'{src_dir}/reads_filtration/module_wraper.py',
                              [module_parameters],
-                             logs_dir, f'{exp_name}_reads_filtration',
+                             logs_dir, f'reads_filtration',
                              queue, verbose)
 
         wait_for_results('reads_filtration', logs_dir, num_of_expected_results=1, example_cmd=cmd,
@@ -70,7 +72,7 @@ def run_pipeline(fastq_path, barcode2samplename_path, samplename2biologicalcondi
             module_parameters.append('--concurrent_cutoffs')
         cmd = submit_pipeline_step(f'{src_dir}/motif_inference/module_wraper.py',
                              [module_parameters],
-                             logs_dir, f'{exp_name}_motif_inference',
+                             logs_dir, f'motif_inference',
                              queue, verbose)
 
         wait_for_results('motif_inference', logs_dir, num_of_expected_results=1, example_cmd=cmd,
@@ -86,7 +88,7 @@ def run_pipeline(fastq_path, barcode2samplename_path, samplename2biologicalcondi
 
         module_parameters = [first_phase_output_path, second_phase_output_path, third_phase_output_path,
                              third_phase_logs_path, samplename2biologicalcondition_path, number_of_random_pssms,
-                             third_phase_done_path, f'--rank_method {rank_method}', f'--error_path {error_path}', 
+                             third_phase_done_path, f'--rank_method {rank_method}', f'--error_path {error_path}',
                              '-v' if verbose else '', f'-q {queue}']
         if rank_method == 'tfidf':
             if tfidf_method:
@@ -96,9 +98,12 @@ def run_pipeline(fastq_path, barcode2samplename_path, samplename2biologicalcondi
         elif rank_method == 'shuffles':
             if shuffles:
                 module_parameters += ['--shuffles', shuffles]
+                             number_of_hyperparams_configuration_to_sample,
+                             third_phase_done_path, f'--error_path {error_path}', '-v' if verbose else '',
+                             f'-q {queue}']
         cmd = submit_pipeline_step(f'{src_dir}/model_fitting/module_wraper.py',
                              [module_parameters],
-                             logs_dir, f'{exp_name}_model_fitting',
+                             logs_dir, f'model_fitting',
                              queue, verbose)
 
         wait_for_results('model_fitting', logs_dir, num_of_expected_results=1, example_cmd=cmd,
@@ -148,7 +153,7 @@ if __name__ == '__main__':
                         help='How many members (at most) should be taken to each cluster')
     parser.add_argument('--max_number_of_cluster_members_per_bc', default=100, type=int,
                         help='How many members (at most) should be taken to each cluster')
-    parser.add_argument('--allowed_gap_frequency', default=0.9,
+    parser.add_argument('--allowed_gap_frequency', default=0.5,
                         help='Maximal gap frequency allowed in msa (higher frequency columns are removed)',
                         type=lambda x: float(x) if 0 < float(x) < 1
                                                 else parser.error(f'The threshold of the maximal gap frequency allowed per column should be between 0 to 1'))
@@ -159,6 +164,8 @@ if __name__ == '__main__':
 
     # optional parameters for the modelling step
     parser.add_argument('--number_of_random_pssms', default=100, type=int, help='Number of pssm permutations')
+    parser.add_argument('--number_of_hyperparams_configuration_to_sample', default=1000, type=int,
+                        help='How many random configurations of hyperparameters should be sampled for choosing the RF model?')
     parser.add_argument('--rank_method', choices=['pval', 'tfidf', 'shuffles'], default='pval', help='Motifs ranking method')
     parser.add_argument('--tfidf_method', choices=['boolean', 'terms', 'log', 'augmented'], default='boolean', help='TF-IDF method')
     parser.add_argument('--tfidf_factor', type=float, default=0.5, help='TF-IDF augmented method factor (0-1)')
@@ -180,7 +187,7 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger('main')
 
-    run_summary_path = args.error_path if args.error_path else os.path.join(args.analysis_dir, 'run_summary_path.txt')
+    run_summary_path = args.error_path if args.error_path else os.path.join(args.analysis_dir, 'run_summary.txt')
     error_path = args.error_path if args.error_path else os.path.join(args.logs_dir, 'error.txt')
 
     concurrent_cutoffs = True if args.concurrent_cutoffs else False
@@ -192,5 +199,6 @@ if __name__ == '__main__':
                  args.max_number_of_cluster_members_per_sample, args.max_number_of_cluster_members_per_bc,
                  args.allowed_gap_frequency, concurrent_cutoffs, args.meme_split_size, args.number_of_random_pssms,
                  args.rank_method, args.tfidf_method, args.tfidf_factor, args.shuffles,
+                 args.number_of_hyperparams_configuration_to_sample,
                  run_summary_path, error_path, args.queue, True if args.verbose else False, sys.argv)
 

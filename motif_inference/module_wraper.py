@@ -131,7 +131,7 @@ def align_clean_pssm_weblogo(folder_names_to_handle, max_clusters_to_align, gap_
         else:
             logger.debug(f'Skipping meme creation as {done_path} exists')
             num_of_expected_results += 1
-    
+
     if len(all_cmds_params) > 0:
         for i in range(0, len(all_cmds_params), num_of_cmds_per_job):
             current_batch = all_cmds_params[i: i + num_of_cmds_per_job]
@@ -280,7 +280,7 @@ def split_then_compute_cutoffs(biological_conditions, meme_split_size,
                         error_file_path=error_path, suffix='_done_split.txt')
     else:
         logger.info('Skipping split, all exist')
-    
+
     # Compute pssm cutoffs for each bc
     # TODO change to read to cut files (read directory)
     logger.info('_'*100)
@@ -332,7 +332,7 @@ def infer_motifs(first_phase_output_path, max_msas_per_sample, max_msas_per_bc,
         logger.info(f'{datetime.datetime.now()}: skipping motif_inference step ({motif_inference_done_path} already exists)')
         return
 
-    samplename2biologicalcondition = load_table_to_dict(samplename2biologicalcondition_path, 'Barcode {} belongs to more than one sample!!')
+    samplename2biologicalcondition = load_table_to_dict(samplename2biologicalcondition_path)
     sample_names = sorted(samplename2biologicalcondition)
     biological_conditions = sorted(set(samplename2biologicalcondition.values()))
 
@@ -480,6 +480,7 @@ def infer_motifs(first_phase_output_path, max_msas_per_sample, max_msas_per_bc,
     biological_condition_memes = []
     all_cmds_params = [] # a list of lists. Each sublist contain different parameters set for the same script to reduce the total number of jobs
     for bc in biological_conditions:
+        relevant_samples = get_delimited_relevant_samples(samplename2biologicalcondition, bc)
         done_path = f'{logs_dir}/08_{bc}_done_meme_merge.txt'
         bc_folder = os.path.join(motif_inference_output_path, bc)
         os.makedirs(bc_folder, exist_ok=True)
@@ -490,6 +491,7 @@ def infer_motifs(first_phase_output_path, max_msas_per_sample, max_msas_per_bc,
         else:
             logger.debug(f'Skipping merge as {done_path} exists')
             num_of_expected_results += 1
+        all_cmds_params.append([motif_inference_output_path, bc, relevant_samples, output_path, done_path])
 
     if len(all_cmds_params) > 0:
         for cmds_params, bc in zip(all_cmds_params, biological_conditions):
@@ -506,7 +508,6 @@ def infer_motifs(first_phase_output_path, max_msas_per_sample, max_msas_per_bc,
 
 
     # Unite motifs based on their correlation using UnitePSSMs.cpp
-    # TODO: verify how exactly this is done
     logger.info('_'*100)
     logger.info(f'{datetime.datetime.now()}: detecting pssms to unite for the following biological conditions\n'
                 f'{biological_conditions}')
@@ -514,9 +515,12 @@ def infer_motifs(first_phase_output_path, max_msas_per_sample, max_msas_per_bc,
     num_of_expected_results = 0
     all_cmds_params = [] # a list of lists. Each sublist contain different parameters set for the same script to reduce the total number of jobs
     for merged_meme_path, bc in zip(biological_condition_memes, biological_conditions):
-        relevant_samples = ','.join([sample for sample in samplename2biologicalcondition if samplename2biologicalcondition[sample] == bc])
+        relevant_samples = get_delimited_relevant_samples(samplename2biologicalcondition, bc)
         output_path = os.path.split(merged_meme_path)[0]
         done_path = f'{logs_dir}/09_{bc}_done_detecting_similar_pssms.txt'
+        all_cmds_params.append([motif_inference_output_path, merged_meme_path, bc,
+                                relevant_samples, max_number_of_cluster_members_per_bc,
+                                output_path, done_path])
         if not os.path.exists(done_path):
             all_cmds_params.append([motif_inference_output_path, merged_meme_path, bc, relevant_samples,
                                     max_number_of_cluster_members_per_bc,
@@ -597,6 +601,8 @@ if __name__ == '__main__':
 
     error_path = args.error_path if args.error_path else os.path.join(args.parsed_fastq_results, 'error.txt')
     concurrent_cutoffs = True if args.concurrent_cutoffs else False
+
+    write_running_configuration(sys.argv, args, args.motif_inference_results)
 
     infer_motifs(args.parsed_fastq_results, args.max_msas_per_sample, args.max_msas_per_bc,
                  args.max_number_of_cluster_members_per_sample, args.max_number_of_cluster_members_per_bc,

@@ -34,6 +34,10 @@ def calculate_pssm_thresholds(meme_path, cutoffs_path, faa_path, number_of_rando
             logger.info(f'{datetime.datetime.now()}: starting Shuffles\' hits. Executed command is:\n{cmd}')
             
         subprocess.run(cmd, shell=True)
+        cmd = f'{pssm_score_peptide} -pssm {meme_path} -pssm_cutoffs {cutoffs_path} -seq {faa_path} ' \
+              f'-out {output_path.replace("scanning", "hits_scores")} -CalcPSSM_Hits'
+        logger.info(f'{datetime.datetime.now()}: starting CalcPSSM_Hits. Executed command is:\n{cmd}')
+        subprocess.run(cmd, shell=True)
     else:
         logger.info(f'{datetime.datetime.now()}: skipping scanning calculation as it is already exist at:\n{output_path}')
 

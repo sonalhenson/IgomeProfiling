@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import pandas as pd
 if os.path.exists('/groups/pupko/orenavr2/'):
     src_dir = '/groups/pupko/orenavr2/igomeProfilingPipeline/src'
 elif os.path.exists('/Users/Oren/Dropbox/Projects/'):
@@ -69,6 +70,25 @@ def aggregate_pvalues_results(meme_path, scanning_results_dir_path, bc, samplena
     header = f'sample_name,label,{",".join(all_consensuses).rstrip(",")}\n'
     pvalues_f.write(header)
     hits_f.write(header)
+    #header
+    pvalues_result = hits_result = f'sample_name,label,{",".join(all_consensuses)}'
+    for file_name in sorted(os.listdir(scanning_results_dir_path)):
+        if file_name.endswith('100.txt'):
+            raise TypeError  # why?
+        if file_name.startswith('.'):
+            # system file...
+            continue
+
+        if file_name.endswith('00.txt'):
+            # next sample is starting
+            pvalues_f.write(f'{pvalues_result.rstrip(",")}\n')
+            hits_f.write(f'{hits_result.rstrip(",")}\n')
+            sample_name = file_name.split('_peptides')[0]
+            if bc in sample_name:
+                label = samplename2biologicalcondition[sample_name]
+            else:
+                label = 'other'
+            pvalues_result = hits_result = f'{sample_name},{label},'
 
     for sample in sorted(samples):
         label = bc if samplename2biologicalcondition[sample] == bc else 'other'
@@ -83,6 +103,17 @@ def aggregate_pvalues_results(meme_path, scanning_results_dir_path, bc, samplena
 
     pvalues_f.close()
     hits_f.close()
+
+    # remove insignificant features:
+    df = pd.read_csv(aggregated_pvalues_path)
+    # features with at least one significant score, across positive-labeled samples
+    positive_class_df = df[df['label'] != 'other']
+    significant_features = (positive_class_df.drop(['sample_name', 'label'], axis=1) < 0.05).sum()>0
+    mask = pd.concat([pd.Series([True, True], index=['sample_name', 'label']),
+                    significant_features])
+    df = df.loc[:, mask]
+    # df = pd.concat([df.loc[:, ['sample_name', 'label']], df.drop(['sample_name', 'label'], axis=1).loc[:, significant_features]], axis=1)
+    df.to_csv(aggregated_pvalues_path.replace('_insignificant', ''), index=False)
 
     # make sure that there are results and the file is not empty
     verify_file_is_not_empty(aggregated_pvalues_path)

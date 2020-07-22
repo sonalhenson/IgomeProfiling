@@ -22,9 +22,9 @@ def repeat_items(list):
 
 def build_classifier(first_phase_output_path, motif_inference_output_path,
                      classification_output_path, logs_dir, samplename2biologicalcondition_path,
-                     fitting_done_path, number_of_random_pssms, rank_method, tfidf_method, tfidf_factor,
-                     shuffles, queue_name, verbose, error_path, argv):
-    is_pval = rank_method == 'pval'
+                     fitting_done_path, number_of_random_pssms, num_of_hyperparam_configurations_to_sample, rank_method, tfidf_method, tfidf_factor,
+                                                                                     shuffles,queue_name, verbose, error_path, argv):
+
     os.makedirs(classification_output_path, exist_ok=True)
     os.makedirs(logs_dir, exist_ok=True)
 
@@ -32,16 +32,19 @@ def build_classifier(first_phase_output_path, motif_inference_output_path,
         logger.info(f'{datetime.datetime.now()}: skipping model_fitting step ({fitting_done_path} already exists)')
         return
 
-    samplename2biologicalcondition = load_table_to_dict(samplename2biologicalcondition_path, 'Barcode {} belongs to more than one sample_name!!')
+    samplename2biologicalcondition = load_table_to_dict(samplename2biologicalcondition_path)
     sample_names = sorted(samplename2biologicalcondition)
     biological_conditions = sorted(set(samplename2biologicalcondition.values()))
 
+    bc_to_scores_paths = {}
     for bc in biological_conditions:
         bc_dir_path = os.path.join(classification_output_path, bc)
         os.makedirs(bc_dir_path, exist_ok=True)
         scanning_dir_path = os.path.join(bc_dir_path, 'scanning')
         os.makedirs(scanning_dir_path, exist_ok=True)
-
+        scores_dir_path = os.path.join(bc_dir_path, 'hits_scores')
+        os.makedirs(scores_dir_path, exist_ok=True)
+        bc_to_scores_paths[bc] = scores_dir_path
 
     # compute scanning scores (hits and values)
     logger.info('_'*100)
@@ -104,6 +107,7 @@ def build_classifier(first_phase_output_path, motif_inference_output_path,
     num_of_expected_results = 0
     all_cmds_params = []  # a list of lists. Each sublist contain different parameters set for the same script to reduce the total number of jobs
     for bc in biological_conditions:
+        relevant_samples = get_delimited_relevant_samples(samplename2biologicalcondition, bc)
         meme_path = os.path.join(motif_inference_output_path, bc, 'meme.txt')
         scanning_dir_path = os.path.join(classification_output_path, bc, 'scanning')
         done_path = os.path.join(logs_dir, f'{bc}_done_aggregate_scores.txt')
@@ -155,7 +159,7 @@ def build_classifier(first_phase_output_path, motif_inference_output_path,
         pvalues_done_path = os.path.join(logs_dir, f'{bc}_values_done_fitting.txt')
         aggregated_hits_path = os.path.join(classification_output_path, bc, f'{bc}_hits.csv')
         hits_done_path = os.path.join(logs_dir, f'{bc}_hits_done_fitting.txt')
-        
+
         value_cmd = [aggregated_values_path, pvalues_done_path]
         hits_cmd = [aggregated_hits_path, hits_done_path]
         if rank_method == 'tfidf' or rank_method == 'shuffles':
@@ -167,7 +171,7 @@ def build_classifier(first_phase_output_path, motif_inference_output_path,
         else:
             logger.debug(f'Skipping fitting as {pvalues_done_path} found')
             num_of_expected_results += 1
-        
+
         if not os.path.exists(hits_done_path):
             all_cmds_params.append(hits_cmd)
         else:
@@ -189,7 +193,6 @@ def build_classifier(first_phase_output_path, motif_inference_output_path,
         logger.info(f'Skipping fitting, all found')
 
 
-    # TODO: fix this bug with a GENERAL WRAPPER done_path
     # wait_for_results(script_name, num_of_expected_results)
     with open(fitting_done_path, 'w') as f:
         f.write(' '.join(argv) + '\n')
@@ -214,7 +217,8 @@ if __name__ == '__main__':
     parser.add_argument('classification_output_path', type=str, help='output folder')
     parser.add_argument('logs_dir', type=str, help='logs folder')
     parser.add_argument('samplename2biologicalcondition_path', type=str, help='A path to the sample name to biological condition file')
-    parser.add_argument('number_of_random_pssms', default=100, type=int, help='Number of pssm permutations')
+    parser.add_argument('number_of_random_pssms', type=int, help='Number of pssm permutations')
+    parser.add_argument('num_of_hyperparam_configurations_to_sample', type=int, help='How many random configurations of hyperparameters should be sampled?')
     parser.add_argument('done_file_path', help='A path to a file that signals that the module finished running successfully.')
 
     parser.add_argument('--rank_method', choices=['pval', 'tfidf', 'shuffles'], default='pval', help='Motifs ranking method')
@@ -235,7 +239,9 @@ if __name__ == '__main__':
 
     error_path = args.error_path if args.error_path else os.path.join(args.parsed_fastq_results, 'error.txt')
 
+    write_running_configuration(sys.argv, args, args.classification_output_path)
+
     build_classifier(args.parsed_fastq_results, args.motif_inference_results, args.classification_output_path,
                      args.logs_dir, args.samplename2biologicalcondition_path, args.done_file_path,
-                     args.number_of_random_pssms, args.rank_method, args.tfidf_method, args.tfidf_factor, 
+                     args.number_of_random_pssms, args.num_of_hyperparam_configurations_to_sample, args.rank_method, args.tfidf_method, args.tfidf_factor,
                      args.shuffles, args.queue, True if args.verbose else False, error_path, sys.argv)

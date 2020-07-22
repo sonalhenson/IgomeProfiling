@@ -170,11 +170,6 @@ def submit_pipeline_step_to_cluster(script_path, params_lists, tmp_dir, job_name
 
     example_cmd = ' '.join([executable, script_path, *[str(param) for param in params]] + (['-v'] if verbose else [])).lstrip() + ';'
 
-    # GENERATE DONE FILE
-    # write an empty string (like "touch" command)
-    # cmds_as_str += ' '.join(['python', done_files_script_path, os.path.join(tmp_dir, job_name + '.done'), 'done'])+';'
-    # cmds_as_str += new_line_delimiter
-
     cmds_as_str += '\t' + job_name + '\n'
     cmds_path = os.path.join(tmp_dir, f'{job_name}.cmds')
     if os.path.exists(cmds_path):
@@ -207,7 +202,7 @@ def create_command(script_path, params_lists, tmp_dir, job_name, queue_name, ver
                    required_modules_as_list=None, num_of_cpus=1, executable='python', done_path=None):
     new_line_delimiter = '\n'
     cmds_as_str = ''
-    
+
     for params in params_lists:
         cmds_as_str += build_args(executable, script_path, params, verbose)
         cmds_as_str += new_line_delimiter
@@ -259,7 +254,7 @@ def submit_pipeline_step(script_path, params_lists, tmp_dir, job_name, queue_nam
         return submit_pipeline_step_to_celery(**locals())
     if global_params.is_run_on_cluster:
         return submit_pipeline_step_to_cluster(**locals())
-    
+
     return run_step_locally(**locals())
 
 
@@ -277,7 +272,7 @@ def fetch_cmd(script_name, parameters, verbose, error_path, done_path=None):
 
 
 
-def load_table_to_dict(table_path, error_msg, delimiter ='\t'):
+def load_table_to_dict(table_path, error_msg='', delimiter ='\t'):
     table = {}
     with open(table_path) as f:
         for line in f:
@@ -365,3 +360,16 @@ def count_memes(path):
     count = int(output) if p_status == 0 else 0
     print(f'Found {count} memes in {path}')
     return count
+
+
+
+def write_running_configuration(argv, args, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    with open(f'{output_dir}/summary_log.txt', 'w') as f:
+        f.write(f'{" ".join(argv)}\n\n')
+        for k, v in args._get_kwargs():
+            f.write(f'{k}: {v}\n')
+
+
+def get_delimited_relevant_samples(samplename2biologicalcondition, bc, delimiter=','):
+    return delimiter.join([sample for sample in samplename2biologicalcondition if samplename2biologicalcondition[sample] == bc])
