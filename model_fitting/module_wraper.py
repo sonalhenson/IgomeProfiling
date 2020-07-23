@@ -23,7 +23,7 @@ def repeat_items(list):
 def build_classifier(first_phase_output_path, motif_inference_output_path,
                      classification_output_path, logs_dir, samplename2biologicalcondition_path,
                      fitting_done_path, number_of_random_pssms, rank_method, tfidf_method, tfidf_factor,
-                     shuffles, queue_name, verbose, error_path, argv):
+                     shuffles, use_new_rf, queue_name, verbose, error_path, argv):
     is_pval = rank_method == 'pval'
     os.makedirs(classification_output_path, exist_ok=True)
     os.makedirs(logs_dir, exist_ok=True)
@@ -119,6 +119,8 @@ def build_classifier(first_phase_output_path, motif_inference_output_path,
                         '--done', done_path]
                 if rank_method == 'shuffles':
                     cmds.append('--rank')
+                if use_new_rf:
+                    cmds.append('--new_rf') #only set here becuase if is_pval then merge_pvalues.py will not get called
                 all_cmds_params.append(cmds)
             else:
                 aggregated_values_path = os.path.join(classification_output_path, bc, f'{bc}_values.csv')
@@ -161,6 +163,10 @@ def build_classifier(first_phase_output_path, motif_inference_output_path,
         if rank_method == 'tfidf' or rank_method == 'shuffles':
             value_cmd.append('--tfidf')
             hits_cmd.append('--tfidf')
+
+        if new_rf:
+            value_cmd.append('--new_rf')
+            hits_cmd.append('--new_rf')
 
         if not os.path.exists(pvalues_done_path):
             all_cmds_params.append(value_cmd)
@@ -221,6 +227,7 @@ if __name__ == '__main__':
     parser.add_argument('--tfidf_method', choices=['boolean', 'terms', 'log', 'augmented'], default='boolean', help='TF-IDF method')
     parser.add_argument('--tfidf_factor', type=float, default=0.5, help='TF-IDF augmented method factor (0-1)')
     parser.add_argument('--shuffles', default=5, type=int, help='Number of controlled shuffles permutations')
+    parser.add_argument('--new_rf', action='store_true', help='run new random forest version')
     parser.add_argument('--error_path', type=str, help='a file in which errors will be written to')
     parser.add_argument('-q', '--queue', default='pupkoweb', type=str, help='a queue to which the jobs will be submitted')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase output verbosity')
@@ -238,4 +245,4 @@ if __name__ == '__main__':
     build_classifier(args.parsed_fastq_results, args.motif_inference_results, args.classification_output_path,
                      args.logs_dir, args.samplename2biologicalcondition_path, args.done_file_path,
                      args.number_of_random_pssms, args.rank_method, args.tfidf_method, args.tfidf_factor, 
-                     args.shuffles, args.queue, True if args.verbose else False, error_path, sys.argv)
+                     args.shuffles, args.new_rf, args.queue, True if args.verbose else False, error_path, sys.argv)

@@ -3,13 +3,15 @@ matplotlib.use('Agg')
 
 import sys
 import os
+import shutil
 import seaborn as sns
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import joblib
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, StratifiedKFold, cross_validate
 from sklearn.model_selection import cross_val_score
+from sklearn.metrics import plot_roc_curve
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +34,66 @@ def parse_data(file_path):
     train_data.set_index('sample_name', inplace=True)
     test_data.set_index('sample_name', inplace=True)
 
-    return train_data, test_data
+    sample_names_train = data['sample_name'][train_rows_mask]
+    sample_names_test = data['sample_name'][test_rows_mask]
+    feature_names = np.array(data.columns)
+
+    return train_data, test_data, feature_names, sample_names_train, sample_names_test
+
+def get_hyperparameters_grid():
+    # Number of trees in random forest
+    n_estimators = [int(x) for x in np.linspace(start=100, stop=2000, num=20)]
+    # Number of features to consider at every split
+    max_features = ['auto', 'sqrt']
+    # Maximum number of levels in tree
+    max_depth = [int(x) for x in np.linspace(10, 110, num=11)]
+    max_depth.append(None)
+    # Minimum number of samples required to split a node
+    min_samples_split = [2, 5, 10]
+    # Minimum number of samples required at each leaf node
+    min_samples_leaf = [1, 2, 4, 8]
+    # Method of selecting samples for training each tree
+    bootstrap = [True, False]
+    # Create the random grid
+    random_grid = {'n_estimators': n_estimators,
+                   'max_features': max_features,
+                   'max_depth': max_depth,
+                   'min_samples_split': min_samples_split,
+                   'min_samples_leaf': min_samples_leaf,
+                   'bootstrap': bootstrap}
+
+    if os.path.exists('/Users/Oren'):
+        # use all cores when running locally.
+        # does not apply on the cluster (needed to be set as well in the .pbs file)
+        random_grid['n_jobs'] = [-1]
+
+    # Use the random grid to search for best hyperparameters
+    return random_grid
+
+
+def sample_configurations(hyperparameters_grid, num_of_configurations_to_sample):
+    configurations = []
+    for i in range(num_of_configurations_to_sample):
+        configuration = {}
+        for key in hyperparameters_grid:
+            configuration[key] = np.random.choice(hyperparameters_grid[key], size=1)[0]
+        configurations.append(configuration)
+    return configurations
+
+
+def generate_heat_map(df, number_of_features, hits, number_of_samples, output_path):
+    # plt.figure(dpi=1000)
+    # transform the data for better contrast in the visualization
+    if hits:  # hits data
+        df = np.log2(df+1)  # pseudo counts
+        # df = df
+    else:  # p-values data
+        df = -np.log2(df)
+    cm = sns.clustermap(df, cmap="Blues", col_cluster=False, yticklabels=True)
+    plt.setp(cm.ax_heatmap.yaxis.get_majorticklabels(), fontsize=150/number_of_samples)
+    cm.ax_heatmap.set_title(f"A heat-map of the significance of the top {number_of_features} discriminatory motifs")
+    cm.savefig(f"{output_path}.svg", format='svg', bbox_inches="tight")
+    plt.close()
 
 
 def plot_heat_map(df, number_of_features, output_path, hits, number_of_samples):
@@ -55,9 +116,9 @@ def plot_error_rate(errors, features, output_path_dir):
     plt.close()
 
 
-def train_models(csv_file_path, done_path, num_of_iterations, use_tfidf, argv):
+def train_models(csv_file_path, done_path, num_of_iterations, use_tfidf, use_new_rf, argv):
     logging.info('Parsing data...')
-    train_data, test_data = parse_data(csv_file_path)
+    train_data, test_data, feature_names, sample_names_train, sample_names_test = parse_data(csv_file_path)
     y = np.array(train_data['label']) # saving the (true) labels
     max_instances_per_class = np.max(np.unique(y, return_counts=True)[1])
     train_data.drop(['label'], axis=1, inplace=True)
@@ -158,6 +219,47 @@ def train(X, y, max_instances_per_class, hits_data, train_data, output_path, see
         # logger.debug(model.predict(test_data.iloc[:, indexes[:number_of_features]]))
     return error_rates, number_of_features_per_model
 
+def measure_each_feature_accuracy(X_train, y_train, feature_names, output_path):
+    feature_to_avg_accuracy = {}
+    # df = pd.read_csv(f'{output_path}/Top_149_features.csv', index_col='sample_name')
+    rf = RandomForestClassifier()
+
+    for i, feature in enumerate(feature_names):
+        # if i % 10 == 0:
+        logger.info(f'Checking feature {feature} number {i}')
+        # assert df.columns[i] == feature
+        cv_score = cross_val_score(rf, X_train[:, i].reshape(-1, 1), y_train, cv=StratifiedKFold(n_splits=4, shuffle=True)).mean()
+        if cv_score == 1:
+            logger.info('-' * 10 + f'{feature} has 100% accuracy!' + '-' * 10)
+        #     print(X_train[:, i].reshape(-1, 1).tolist()[:8] + X_train[:, i].reshape(-1, 1).tolist()[12:])
+        #     print(f'min of other class: {min(X_train[:, i].reshape(-1, 1).tolist()[:8] + X_train[:, i].reshape(-1, 1).tolist()[12:])}')
+        #     print(X_train[:, i].reshape(-1, 1).tolist()[8:12])
+        #     # print(y_train.tolist())
+        #     print('Accuracy is 1')
+        feature_to_avg_accuracy[feature] = cv_score
+
+    with open(f'{output_path}/single_feature_accuracy.txt', 'w') as f:
+        f.write('Feature\tAccuracy_on_cv\n')
+        for feature in sorted(feature_to_avg_accuracy, key=feature_to_avg_accuracy.get, reverse=True):
+            f.write(f'{feature}\t{feature_to_avg_accuracy[feature]}\n')
+
+    perfect_feature_names = []
+    perfect_feature_indexes = []
+    with open(f'{output_path}/features_with_perfect_accuracy.txt', 'w') as f:
+        for i, feature in enumerate(feature_to_avg_accuracy):
+            if feature_to_avg_accuracy[feature] == 1:
+                perfect_feature_names.append(feature)
+                perfect_feature_indexes.append(i)
+                f.write(f'{feature}\n')
+
+    return perfect_feature_names, perfect_feature_indexes
+
+
+def save_configuration_to_txt_file(sampled_configuration, output_path_i):
+    with open(f'{output_path_i}/hyperparameters_configuration.txt', 'w') as f:
+        for key in sampled_configuration:
+            f.write(f'{key}={sampled_configuration[key]}\n')
+    joblib.dump(sampled_configuration, f'{output_path_i}/hyperparameters_configuration.pkl')
 
 if __name__ == '__main__':
 
@@ -169,6 +271,7 @@ if __name__ == '__main__':
     parser.add_argument('data_path', type=str, help='A csv file with data matrix to model ')
     parser.add_argument('done_file_path', help='A path to a file that signals that the script finished running successfully.')
     parser.add_argument('--num_of_iterations', default=10, help='How many should the RF run?')
+    parser.add_argument('--new_rf', action='store_true', help='run new random forest version')
     parser.add_argument('--tfidf', action='store_true', help="Are inputs from TF-IDF (avoid log(0))")
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase output verbosity')
     args = parser.parse_args()
@@ -179,5 +282,5 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger('main')
 
-    train_models(args.data_path, args.done_file_path, args.num_of_iterations, args.tfidf, argv=sys.argv)
+    train_models(args.data_path, args.done_file_path, args.num_of_iterations, args.tfidf, args.new_rf, argv=sys.argv)
 
