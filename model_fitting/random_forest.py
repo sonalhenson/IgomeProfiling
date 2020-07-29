@@ -18,7 +18,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('main')
 
 
-
 def parse_data(file_path):
     # reading the CSV file if it's legal
     try:
@@ -33,12 +32,10 @@ def parse_data(file_path):
     # set sample names as index
     train_data.set_index('sample_name', inplace=True)
     test_data.set_index('sample_name', inplace=True)
-
-    sample_names_train = data['sample_name'][train_rows_mask]
-    sample_names_test = data['sample_name'][test_rows_mask]
     feature_names = np.array(data.columns)
+    
+    return train_data, test_data, feature_names
 
-    return train_data, test_data, feature_names, sample_names_train, sample_names_test
 
 def get_hyperparameters_grid():
     # Number of trees in random forest
@@ -81,21 +78,6 @@ def sample_configurations(hyperparameters_grid, num_of_configurations_to_sample)
     return configurations
 
 
-def generate_heat_map(df, number_of_features, hits, number_of_samples, output_path):
-    # plt.figure(dpi=1000)
-    # transform the data for better contrast in the visualization
-    if hits:  # hits data
-        df = np.log2(df+1)  # pseudo counts
-        # df = df
-    else:  # p-values data
-        df = -np.log2(df)
-    cm = sns.clustermap(df, cmap="Blues", col_cluster=False, yticklabels=True)
-    plt.setp(cm.ax_heatmap.yaxis.get_majorticklabels(), fontsize=150/number_of_samples)
-    cm.ax_heatmap.set_title(f"A heat-map of the significance of the top {number_of_features} discriminatory motifs")
-    cm.savefig(f"{output_path}.svg", format='svg', bbox_inches="tight")
-    plt.close()
-
-
 def plot_heat_map(df, number_of_features, output_path, hits, number_of_samples):
     #plt.figure(dpi=3000)
     cm = sns.clustermap(df, cmap="Blues", col_cluster=False, yticklabels=True)
@@ -116,34 +98,100 @@ def plot_error_rate(errors, features, output_path_dir):
     plt.close()
 
 
-def train_models(csv_file_path, done_path, num_of_iterations, use_tfidf, use_new_rf, argv):
+def train_models(csv_file_path, num_of_configurations_to_sample, done_path, cv_num_of_splits, use_new_rf, num_of_iterations, argv):
     logging.info('Parsing data...')
-    train_data, test_data, feature_names, sample_names_train, sample_names_test = parse_data(csv_file_path)
+
+    train_data, test_data, feature_names = parse_data(csv_file_path)
     y = np.array(train_data['label']) # saving the (true) labels
     max_instances_per_class = np.max(np.unique(y, return_counts=True)[1])
     train_data.drop(['label'], axis=1, inplace=True)
     test_data.drop(['label'], axis=1, inplace=True)
     X = np.array(train_data)  # saving an array of the variables
     is_hits_data = 'hits' in csv_file_path
+    sample_names_train = train_data[train_rows_mask]
+    sample_names_test = test_data[test_rows_mask]
 
     logging.info('Preparing output path...')
     csv_folder, csv_file_name = os.path.split(csv_file_path)
     csv_file_prefix = os.path.splitext(csv_file_name)[0]  # without extension
     output_path = os.path.join(csv_folder, f'{csv_file_prefix}_model')
     feature_selection_summary_path = f'{output_path}/feature_selection_summary.txt'
-    for i in range(num_of_iterations):
-        output_path_i = os.path.join(output_path, str(i))
-        if not os.path.exists(output_path_i):
-            logging.info('Creating output path...')
-            os.makedirs(output_path_i)
 
-        errors, features = train(X, y, max_instances_per_class, is_hits_data, 
-                                 train_data, output_path_i, 3481 + i, use_tfidf)
 
-        plot_error_rate(errors, features, output_path_i)
+    if use_new_rf:
+        for i in range(num_of_iterations):
+            output_path_i = os.path.join(output_path, str(i))
+            if not os.path.exists(output_path_i):
+                logging.info('Creating output path...')
+                os.makedirs(output_path_i)
 
-        with open(feature_selection_summary_path, 'w' if i == 0 else 'a') as f:  # override only on first iteration
-            f.write(f'{i}\t{features[-1]}\n')
+            errors, features = train(X, y, max_instances_per_class, is_hits_data, 
+                                    train_data, output_path_i, 3481 + i, use_tfidf)
+
+            plot_error_rate(errors, features, output_path_i)
+
+            with open(feature_selection_summary_path, 'w' if i == 0 else 'a') as f:  # override only on first iteration
+                f.write(f'{i}\t{features[-1]}\n')
+    else:
+        os.makedirs(output_path, exist_ok=True)	
+        best_model_path = os.path.join(output_path, f'best_model')	
+
+        # single feature analysis	
+        logging.info('Applying single feature analysis...')	
+        perfect_feature_names, perfect_feature_indexes = measure_each_feature_accuracy(X, y, feature_names, output_path)	
+        if perfect_feature_names:	
+            df = save_model_features(X_train, perfect_feature_indexes, perfect_feature_names, sample_names_train, f'{output_path}/perfect_feature_names')	
+            plot_heat_map(df, df.shape[1], output_path, False, df.shape[0])	
+        else:	
+            # touch a file so we can see that there were no perfect features	
+            with open(f'{output_path}/perfect_feature_names', 'w') as f:	
+                pass	
+        # feature selection analysis	
+        logging.info('\nApplying feature selection analysis...')	
+        if cv_num_of_splits < 2:	
+            logging.info('Number of CV folds is less than 2. '	
+                        'Updating number of splits to number of samples and applying Leave One Out approach!')	
+            cv_num_of_splits = len(y_train)	
+        logging.info(f'Number of CV folds is {cv_num_of_splits}.')	
+        logger.info('\n'+'#'*100 + f'\nTrue labels:\n{y_train.tolist()}\n' + '#'*100 + '\n')	
+        logging.info('Sampling hyperparameters...')	
+        hyperparameters_grid = get_hyperparameters_grid()	
+        feature_selection_summary_f = open(feature_selection_summary_path, 'w')	
+        feature_selection_summary_f.write(f'model_number\tnum_of_features\tfinal_error_rate\n')	
+        sampled_configurations = sample_configurations(hyperparameters_grid, num_of_configurations_to_sample)	
+        for i, configuration in enumerate(sampled_configurations):	
+            model_number = str(i).zfill(len(str(num_of_configurations_to_sample)))	
+            output_path_i = os.path.join(output_path, model_number)	
+            logging.info(f'Creating output path #{i}...')	
+            os.makedirs(output_path_i, exist_ok=True)	
+            save_configuration_to_txt_file(configuration, output_path_i)	
+            logging.info(f'Configuration #{i} hyper-parameters are:\n{configuration}')	
+            rf = RandomForestClassifier(**configuration)	
+            errors, features = train_new_rf(rf, X, y, feature_names, sample_names_train, is_hits_data, output_path_i)	
+            plot_error_rate(errors, features, cv_num_of_splits, output_path_i)	
+            feature_selection_summary_f.write(f'{model_number}\t{features[-1]}\t{errors[-1]}\n')	
+            if features[-1] == 1 and errors[-1] == 0:	
+                # found the best model (accuracy-wise)	
+                # there is no point to continue...	
+                break	
+        feature_selection_summary_f.close()	
+        # find who was the best performing model	
+        models_stats = pd.read_csv(feature_selection_summary_path, sep='\t', dtype={'model_number': str, 'num_of_features':int, 'final_error_rate': float })	
+        lowest_error_models = models_stats[models_stats['final_error_rate'] ==	
+                                        min(models_stats['final_error_rate'])]	
+        # in case there is a tie between best models, we choose the model with the lowest number of features	
+        if len(lowest_error_models) > 1:	
+            lowest_error_models = lowest_error_models[lowest_error_models['num_of_features'] ==	
+                                                    min(lowest_error_models['num_of_features'])]	
+        best_model = lowest_error_models['model_number'].iloc[0]	
+        # keep only best model (and remove the rest)	
+        shutil.copytree(f'{output_path}/{best_model}', best_model_path)	
+        for folder in os.listdir(output_path):	
+            path = f'{output_path}/{folder}'	
+            if folder == 'best_model' or not os.path.isdir(path):	
+                continue	
+            shutil.rmtree(path)
+
 
     with open(done_path, 'w') as f:
         f.write(' '.join(argv) + '\n')
@@ -219,6 +267,97 @@ def train(X, y, max_instances_per_class, hits_data, train_data, output_path, see
         # logger.debug(model.predict(test_data.iloc[:, indexes[:number_of_features]]))
     return error_rates, number_of_features_per_model
 
+
+def train_new_rf(rf, X, y, feature_names, sample_names, hits_data, output_path):
+    original_feature_names = feature_names[:]
+    original_X = X[:]
+    logger.debug('\n'+'#'*100 + f'\nTrue labels:\n{y.tolist()}\n' + '#'*100 + '\n')
+
+    # Fit the best model configuration on the WHOLE dataset
+    logging.info('Training...')
+    model = rf.fit(X, y)
+    importance = model.feature_importances_
+
+    # the permutation needed to get the feature importances in a decreasing order
+    decreasing_feature_importance = np.argsort(importance)[::-1]
+    assert (sorted(importance, reverse=True) == importance[decreasing_feature_importance]).all()
+
+    # the indexes that will be used in the next fitting process
+    # At first, we start with all features. Next we will remove less important once.
+    features_indexes_to_keep = range(len(feature_names))
+
+    # write feature importance to storage
+    with open(f'{output_path}/feature_importance.txt', 'w') as f:
+        for i in range(len(importance)):
+            f.write(f'{feature_names[i]}\t{importance[i]}\n')
+
+    # write sorted feature importance to storage
+    with open(f'{output_path}/sorted_feature_importance.txt', 'w') as f:
+        for i in range(len(importance)):
+            f.write(f'{feature_names[decreasing_feature_importance[i]]}\t'
+                    f'{importance[decreasing_feature_importance[i]]}\n')
+
+    number_of_samples, number_of_features = X.shape
+    cv_avg_error_rate = previous_cv_avg_error_rate = 1
+    cv_avg_error_rates = []
+    number_of_features_per_model = []
+    while cv_avg_error_rate <= previous_cv_avg_error_rate and number_of_features >= 1:
+
+        # save previous cv_avg_error_rate to make sure the performances do not deteriorate
+        previous_cv_avg_error_rate = cv_avg_error_rate
+
+        # predictions = model.predict(X)
+        # logger.info(f'Full model error rate is {1 - (predictions == y).mean()}')
+        # logger.info(f'Current model\'s predictions\n{predictions.tolist()}')
+
+        # compute current model accuracy for each fold of the cross validation
+        cv_score = cross_val_score(model, X, y, cv=StratifiedKFold(n_splits=4))
+
+        # current model cv_avg_error_rate rate
+        cv_avg_error_rate = 1 - cv_score.mean()
+        number_of_features_per_model.append(number_of_features)
+        cv_avg_error_rates.append(cv_avg_error_rate)
+
+        logger.info(f'Number of features is {number_of_features} with avg. error rate of {cv_avg_error_rate}')
+        if cv_avg_error_rate > previous_cv_avg_error_rate:
+            # Stop procedure and discard current stats
+            break
+
+        # save current model (unsorted) features to a csv file
+        df = save_model_features(original_X, features_indexes_to_keep, feature_names, sample_names, f'{output_path}/Top_{number_of_features}_features')
+
+        plot_heat_map(df, number_of_features, output_path, hits_data, number_of_samples)
+
+        generate_roc_curve(X, y, rf, number_of_features, output_path)
+
+        # save the model itself (serialized) for future use
+        joblib.dump(model, os.path.join(output_path, f'Top_{number_of_features}_features_model.pkl'))
+
+        # Sanity check for debugging: predicting the test data
+        model_score = model.score(X, y)
+        if 1-model_score > cv_avg_error_rate:
+            predictions = model.predict(X).tolist()
+            logging.error('1-model_score > cv_avg_error_rate !!!')
+            logger.info(f'Full model error rate is {1-model_score}')
+            logger.info(f'Current model\'s predictions\n{predictions}')
+            logger.info(f'number_of_features {number_of_features}')
+            logger.info(f'output_path {output_path}')
+
+        # update number of features
+        number_of_features //= 2
+
+        # extract only the (new) half most important features
+        features_indexes_to_keep = sorted(decreasing_feature_importance[:number_of_features])
+        feature_names = original_feature_names[features_indexes_to_keep]
+        X = original_X[:, features_indexes_to_keep]
+
+        if number_of_features > 0:
+            # re-evaluate
+            model = rf.fit(X, y)
+
+    return cv_avg_error_rates, number_of_features_per_model
+
+
 def measure_each_feature_accuracy(X_train, y_train, feature_names, output_path):
     feature_to_avg_accuracy = {}
     # df = pd.read_csv(f'{output_path}/Top_149_features.csv', index_col='sample_name')
@@ -270,6 +409,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('data_path', type=str, help='A csv file with data matrix to model ')
     parser.add_argument('done_file_path', help='A path to a file that signals that the script finished running successfully.')
+    parser.add_argument('num_of_configurations_to_sample', type=int, help='How many random configurations of hyperparameters should be sampled?')
+    parser.add_argument('--cv_num_of_splits', default=4, help='How folds should be in the cross validation process? (use 0 for leave one out)')
     parser.add_argument('--num_of_iterations', default=10, help='How many should the RF run?')
     parser.add_argument('--new_rf', action='store_true', help='run new random forest version')
     parser.add_argument('--tfidf', action='store_true', help="Are inputs from TF-IDF (avoid log(0))")
@@ -282,5 +423,4 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger('main')
 
-    train_models(args.data_path, args.done_file_path, args.num_of_iterations, args.tfidf, args.new_rf, argv=sys.argv)
-
+    train_models(args.data_path, args.num_of_configurations_to_sample, args.done_file_path, args.cv_num_of_splits, args.new_rf, args.num_of_iterations, argv=sys.argv)
