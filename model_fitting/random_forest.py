@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import joblib
-from sklearn.ensemble import RandomForestClassifier, StratifiedKFold, cross_validate
-from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score, StratifiedKFold, cross_validate
 from sklearn.metrics import plot_roc_curve
 
 import logging
@@ -32,9 +32,30 @@ def parse_data(file_path):
     # set sample names as index
     train_data.set_index('sample_name', inplace=True)
     test_data.set_index('sample_name', inplace=True)
+    return train_data, test_data
+
+def parse_data_new_rf(file_path):
+    data = pd.read_csv(file_path, engine='python')
+    test_rows_mask = data['sample_name'].str.contains('test')
+    train_rows_mask = ~test_rows_mask
+
+    # separating train and test samples (fifth sample of each mAb)
+    # a matrix of the actual feature values
+    y_train = data['label'][train_rows_mask]
+    y_test = data['label'][test_rows_mask]
+
+    sample_names_train = data['sample_name'][train_rows_mask]
+    sample_names_test = data['sample_name'][test_rows_mask]
+
+    # don't need the labels and sample names anymore
+    data.drop(['sample_name', 'label'], axis=1, inplace=True)
+    # a matrix of the actual feature values
+    X_train = data[train_rows_mask].values
+    X_test = data[test_rows_mask].values
+
     feature_names = np.array(data.columns)
-    
-    return train_data, test_data, feature_names
+
+    return X_train, y_train, X_test, y_test, feature_names, sample_names_train, sample_names_test
 
 
 def get_hyperparameters_grid():
@@ -97,19 +118,35 @@ def plot_error_rate(errors, features, output_path_dir):
     plt.savefig(f"{output_path_dir}/error_rate.png")
     plt.close()
 
+def plot_error_rate_new_rf(errors, features, cv_num_of_splits, output_path_dir):
+    raw_data_path = f"{output_path_dir}/error_rate.txt"
+    with open(raw_data_path, 'w') as f:
+        f.write('Features\tErrors\n')
+        f.write('\n'.join(f'{feature}\t{error}' for feature, error in zip(features[::-1], errors[::-1])))
+    plt.figure(dpi=1000)
+    plt.plot(features, errors, '--o')
+    plt.xscale('log')
+    plt.ylim(-0.02, 1)
+    plt.xlabel('# of Features')
+    plt.ylabel(f'{cv_num_of_splits}Fold CV Avg. Error Rate')
+    plot_path = raw_data_path.replace('.txt', '.png')
+    plt.savefig(plot_path)
+    plt.close()
 
-def train_models(csv_file_path, num_of_configurations_to_sample, done_path, cv_num_of_splits, use_new_rf, num_of_iterations, argv):
+
+def train_models(csv_file_path, num_of_configurations_to_sample, done_path, cv_num_of_splits, use_new_rf, use_tfidf, num_of_iterations, argv):
     logging.info('Parsing data...')
+    if use_new_rf:
+        X_train, y_train, X_test, y_test, feature_names, sample_names_train, sample_names_test = parse_data_new_rf(csv_file_path)
+    else:
+        train_data, test_data = parse_data(csv_file_path)
+        y = np.array(train_data['label']) # saving the (true) labels
+        train_data.drop(['label'], axis=1, inplace=True)
+        test_data.drop(['label'], axis=1, inplace=True)
+        X = np.array(train_data)  # saving an array of the variables
+        max_instances_per_class = np.max(np.unique(y, return_counts=True)[1])
 
-    train_data, test_data, feature_names = parse_data(csv_file_path)
-    y = np.array(train_data['label']) # saving the (true) labels
-    max_instances_per_class = np.max(np.unique(y, return_counts=True)[1])
-    train_data.drop(['label'], axis=1, inplace=True)
-    test_data.drop(['label'], axis=1, inplace=True)
-    X = np.array(train_data)  # saving an array of the variables
     is_hits_data = 'hits' in csv_file_path
-    sample_names_train = train_data[train_rows_mask]
-    sample_names_test = test_data[test_rows_mask]
 
     logging.info('Preparing output path...')
     csv_folder, csv_file_name = os.path.split(csv_file_path)
@@ -118,7 +155,7 @@ def train_models(csv_file_path, num_of_configurations_to_sample, done_path, cv_n
     feature_selection_summary_path = f'{output_path}/feature_selection_summary.txt'
 
 
-    if use_new_rf:
+    if not use_new_rf:
         for i in range(num_of_iterations):
             output_path_i = os.path.join(output_path, str(i))
             if not os.path.exists(output_path_i):
@@ -138,7 +175,7 @@ def train_models(csv_file_path, num_of_configurations_to_sample, done_path, cv_n
 
         # single feature analysis	
         logging.info('Applying single feature analysis...')	
-        perfect_feature_names, perfect_feature_indexes = measure_each_feature_accuracy(X, y, feature_names, output_path)	
+        perfect_feature_names, perfect_feature_indexes = measure_each_feature_accuracy(X_train, y_train, feature_names, output_path)	
         if perfect_feature_names:	
             df = save_model_features(X_train, perfect_feature_indexes, perfect_feature_names, sample_names_train, f'{output_path}/perfect_feature_names')	
             plot_heat_map(df, df.shape[1], output_path, False, df.shape[0])	
@@ -167,8 +204,8 @@ def train_models(csv_file_path, num_of_configurations_to_sample, done_path, cv_n
             save_configuration_to_txt_file(configuration, output_path_i)	
             logging.info(f'Configuration #{i} hyper-parameters are:\n{configuration}')	
             rf = RandomForestClassifier(**configuration)	
-            errors, features = train_new_rf(rf, X, y, feature_names, sample_names_train, is_hits_data, output_path_i)	
-            plot_error_rate(errors, features, cv_num_of_splits, output_path_i)	
+            errors, features = train_new_rf(rf, X_train, y_train, feature_names, sample_names_train, is_hits_data, output_path_i)	
+            plot_error_rate_new_rf(errors, features, cv_num_of_splits, output_path_i)	
             feature_selection_summary_f.write(f'{model_number}\t{features[-1]}\t{errors[-1]}\n')	
             if features[-1] == 1 and errors[-1] == 0:	
                 # found the best model (accuracy-wise)	
@@ -196,6 +233,19 @@ def train_models(csv_file_path, num_of_configurations_to_sample, done_path, cv_n
     with open(done_path, 'w') as f:
         f.write(' '.join(argv) + '\n')
 
+def save_model_features(X, feature_indexes, feature_names, sample_names, output_path):
+    df = pd.DataFrame()
+    for i in range(len(feature_names)):
+        df[feature_names[i]] = X[:, feature_indexes[i]]  # train_data.iloc[:, :number_of_features]
+    df.set_index(sample_names, inplace=True)
+    df.to_csv(f"{output_path}.csv")
+    return df
+
+def generate_roc_curve(X, y, classifier, number_of_features, output_path):
+    ax = plt.gca()
+    plot_roc_curve(classifier, X, y, **{'marker': 'o'}, ax=ax)
+    plt.savefig(f"{output_path}/roc_curve_{number_of_features}.png", format='png', bbox_inches="tight")
+    plt.close()
 
 def train(X, y, max_instances_per_class, hits_data, train_data, output_path, seed, use_tfidf):
     logging.info('Training...')
@@ -311,7 +361,7 @@ def train_new_rf(rf, X, y, feature_names, sample_names, hits_data, output_path):
         # logger.info(f'Current model\'s predictions\n{predictions.tolist()}')
 
         # compute current model accuracy for each fold of the cross validation
-        cv_score = cross_val_score(model, X, y, cv=StratifiedKFold(n_splits=4))
+        cv_score = cross_val_score(model, X, y, cv=StratifiedKFold(n_splits=2))
 
         # current model cv_avg_error_rate rate
         cv_avg_error_rate = 1 - cv_score.mean()
@@ -367,7 +417,7 @@ def measure_each_feature_accuracy(X_train, y_train, feature_names, output_path):
         # if i % 10 == 0:
         logger.info(f'Checking feature {feature} number {i}')
         # assert df.columns[i] == feature
-        cv_score = cross_val_score(rf, X_train[:, i].reshape(-1, 1), y_train, cv=StratifiedKFold(n_splits=4, shuffle=True)).mean()
+        cv_score = cross_val_score(rf, X_train[:, i].reshape(-1, 1), y_train, cv=StratifiedKFold(n_splits=2, shuffle=True)).mean()
         if cv_score == 1:
             logger.info('-' * 10 + f'{feature} has 100% accuracy!' + '-' * 10)
         #     print(X_train[:, i].reshape(-1, 1).tolist()[:8] + X_train[:, i].reshape(-1, 1).tolist()[12:])
@@ -409,7 +459,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('data_path', type=str, help='A csv file with data matrix to model ')
     parser.add_argument('done_file_path', help='A path to a file that signals that the script finished running successfully.')
-    parser.add_argument('num_of_configurations_to_sample', type=int, help='How many random configurations of hyperparameters should be sampled?')
+    parser.add_argument('num_of_configurations_to_sample', default=1000, type=int, help='How many random configurations of hyperparameters should be sampled?')
     parser.add_argument('--cv_num_of_splits', default=4, help='How folds should be in the cross validation process? (use 0 for leave one out)')
     parser.add_argument('--num_of_iterations', default=10, help='How many should the RF run?')
     parser.add_argument('--new_rf', action='store_true', help='run new random forest version')
@@ -423,4 +473,4 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger('main')
 
-    train_models(args.data_path, args.num_of_configurations_to_sample, args.done_file_path, args.cv_num_of_splits, args.new_rf, args.num_of_iterations, argv=sys.argv)
+    train_models(args.data_path, args.num_of_configurations_to_sample, args.done_file_path, args.cv_num_of_splits, args.new_rf, args.tfidf, args.num_of_iterations, argv=sys.argv)

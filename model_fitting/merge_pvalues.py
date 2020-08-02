@@ -155,8 +155,8 @@ if __name__ == '__main__':
     parser.add_argument('aggregated_pvalues_path', help='A path to which the Pvalues table will be written to')
     parser.add_argument('aggregated_hits_path', help='A path to which the hits table will be written to')
     parser.add_argument('samplename2biologicalcondition_path', type=str, help='A path to the sample name to biological condition file')
-    parser.add_argument('--new_rf', action='store_true', help='run new random forest version')
     parser.add_argument('done_file_path', help='A path to a file that signals that the script finished running successfully.')
+    parser.add_argument('--new_rf', action='store_true', help='run new random forest version')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase output verbosity')
     args = parser.parse_args()
 

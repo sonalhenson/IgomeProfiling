@@ -33,6 +33,7 @@ if __name__ == '__main__':
     parser.add_argument('scores_path', type=lambda x: x.rstrip('/'),
                         help='A path to a (MEME) file with the motifs against which the random peptides were scanned (in silico)')
     parser.add_argument('biological_condition', help='The bc that should be aggregated')
+    parser.add_argument('--new_rf', action='store_true', help='run new random forest version')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase output verbosity')
     args = parser.parse_args()
 
