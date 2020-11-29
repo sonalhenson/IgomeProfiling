@@ -7,28 +7,28 @@ import sys
 import os
 
 
-
-name_test=['COBRA','naive','sichuan','swiss','texas']
-dic={'COBRA_col':['sample_name','CGPHSSLFSC', 'CGHSSLFSCLAC','CLHSSLFSSPCP','CLSYSSLFSC','CPHTSTIFSGPC','CPHHSSLFSC'],
-'naive_col':['sample_name','CLPQLPALSQCC', 'CGGPEWREKC','CGSNESREKC','CETDVTGLLINC'],
-'sichuan_col':['sample_name','SLLRLEPSS','CQIRAKDQGLVC','AASMIDKPT','LLLSLSAPCC','PYHMLHIWGVEP','SWYVETPIAK'],
-'swiss_col':['sample_name','CVTAVDPIHLTLMC','PPSLYARFD','TTPLGLFERF','PPSLYDRFSP'],
-'texas_col':['sample_name','CKLSSLFSSC','CKLSSLFSRC','CRDVSLFSSC','RKESSLFSVC','CKTINLFSRC']}
-
-def getData(path_output,path_model_fitting):
-    #get the sample names form one of the csv file
-    sample_name=pd.read_csv(path_model_fitting+'/ferret_COBRA/ferret_COBRA_hits.csv')['sample_name']
+def getData(path_output,path_model_fitting,names_motif):    
+    file_motif=pd.read_csv(names_motif)
+    #transpose the data frame to a dictionary
+    dic_motif=file_motif.set_index('name_bio').T.to_dict('list')
     
-    #get the data and create list of motifs for axis x
+    #get the sample names form one of the csv file
+    name_bio_one= list(dic_motif.keys())[0] 
+    sample_name=pd.read_csv(path_model_fitting+'/'+name_bio_one+'/'+name_bio_one+'_hits.csv')['sample_name']
+
+    #get the hits/value from every table of other biological condition
     data=pd.DataFrame({'sample_name':sample_name})
-    for name in name_test:
-        table=pd.read_csv(path_model_fitting+'/ferret_'+name+'/ferret_'+name+'_hits_model/perfect_feature_names.csv')
-        table_new= table[dic[f'{name}_col']]
+    for key in dic_motif:
+        table=pd.read_csv(path_model_fitting+'/'+key+'/'+key+'_hits_model/perfect_feature_names.csv')
+        values=dic_motif[key]
+        clean_values=[x for x in values if str(x) != 'nan']
+        table_new= table[clean_values]
         data=pd.merge(data,table_new)
     motif_name=data.columns
     create_heatmap(data,sample_name,motif_name,path_output)
     
 def create_heatmap(df,sample_name,motif_name,path_output):
+    #create map of all motif form every biological condiation
     df= df.drop(columns=['sample_name'])
     #normalization the data, the data is mix of many runs. 
     train_data=((df-df.min())/(df.max()-df.min()))
@@ -45,17 +45,16 @@ def create_heatmap(df,sample_name,motif_name,path_output):
     
     
      
-    
-    
 
 if __name__ == '__main__':
     print(f'Starting {sys.argv[0]}. Executed command is:\n{" ".join(sys.argv)}')
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('output_results', type=str, help='A output folder to put the run results')
-    parser.add_argument('model_fitting_results', type=str, help='output folder')
-    
+    parser.add_argument('output_heatmap', type=str, help='A output folder to put the heatmap result')
+    parser.add_argument('model_fitting_results', type=str, help='folder of the last run to get the data')
+    parser.add_argument('file_of_select_motif', type=str, help='csv file with the all the selected motif to connect together')
+
     args = parser.parse_args()
 
-    getData(args.output_results,args.model_fitting_results)
+    getData(args.output_heatmap,args.model_fitting_results,args.file_of_select_motif)
