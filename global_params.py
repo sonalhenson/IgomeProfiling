@@ -9,8 +9,10 @@ else:
     src_dir = '.'
     is_run_on_cluster = False
 
-run_local_in_parallel_mode = True
-run_using_celery = True
+# ILRI modifications
+is_run_on_cluster = True
+run_local_in_parallel_mode = False
+run_using_celery = False
 
 local_command_prefix = "bash"
 
@@ -21,7 +23,7 @@ mafft = "mafft/7.123"
 
 # external scripts
 pssm_score_peptide_script = "./PSSM_score_Peptide/PSSM_score_Peptide"
-qsub_script = "/bioseq/bioSequence_scripts_and_constants/q_submitter_power.py"
+qsub_script = "/home/aorth/src/git/IgomeProfiling/q_submitter_power.py"
 
 biggest_cluster = 100
 biggest_cluster_sec = 400
