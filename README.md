@@ -63,6 +63,13 @@ cd IgomeProfiling
 
 ### Compile
 Most of the code is in Python but some of the code is in C++ and requires compilation:
+Before you start compiling make sure you have the correct GCC version.
+You're require to switch to GCC 7.X if on ILRI's HPC.
+```bash
+scl enable devtoolset-7 bash
+gcc --version # Confirm version has switched
+```
+
 * UnitePSSMs:
   ```bash
   # From project directory
