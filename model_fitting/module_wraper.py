@@ -197,7 +197,7 @@ def build_classifier(first_phase_output_path, motif_inference_output_path,
 
 def get_faa_file_name_from_path(path, use_mapitop):
     for file_name in os.listdir(path):
-        if file_name.endswith('faa') and 'unique' not in file_name and ('mapitope' in file_name) == use_mapitope:
+        if file_name.endswith('faa') and 'unique' not in file_name and ('mapitope' in file_name) == use_mapitop:
             file_name = file_name
             break
     return os.path.join(path, file_name)
