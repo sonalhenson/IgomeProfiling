@@ -151,9 +151,11 @@ def wait_for_results(script_name, path, num_of_expected_results, error_file_path
 
 
 def submit_pipeline_step_to_cluster(script_path, params_lists, tmp_dir, job_name, queue_name, verbose, new_line_delimiter='!@#',
-                         q_submitter_script_path='/bioseq/bioSequence_scripts_and_constants/q_submitter_power.py',
+                         q_submitter_script_path=global_params.qsub_script,
                          required_modules_as_list=None, num_of_cpus=1, executable='python', done_path=None):
-    required_modules_as_str = 'python/python-anaconda3.6.5-orenavr2'
+    import time
+
+    required_modules_as_str = 'cd-hit/4.6.8 mafft/7.313'
     if required_modules_as_list:
         # don't forget a space after the python module!!
         required_modules_as_str += ' ' + ' '.join(required_modules_as_list)
@@ -178,14 +180,17 @@ def submit_pipeline_step_to_cluster(script_path, params_lists, tmp_dir, job_name
     cmds_as_str += '\t' + job_name + '\n'
     cmds_path = os.path.join(tmp_dir, f'{job_name}.cmds')
     if os.path.exists(cmds_path):
-        cmds_path = os.path.join(tmp_dir, f'{job_name}_{time()}.cmds')
+        cmds_path = os.path.join(tmp_dir, f'{job_name}_{time.time()}.cmds')
     with open(cmds_path, 'w') as f:
         f.write(cmds_as_str)
 
     # process_str = f'{q_submitter_script_path} {cmds_path} {tmp_dir} -q {queue_name} --cpu {num_of_cpus}'
-    process = [q_submitter_script_path, cmds_path, tmp_dir, '-q', queue_name, '--cpu', str(num_of_cpus)]
+    process = [q_submitter_script_path, cmds_path, tmp_dir, '-p', queue_name, '--cpu', str(num_of_cpus)]
     logger.info(f'Calling:\n{" ".join(process)}')
     # if True: return
+    # don't overload SLURM with job submissions
+    time.sleep(1)
+
     run(process)
     return example_cmd
 
@@ -249,7 +254,7 @@ def run_step_locally(script_path, params_lists, tmp_dir, job_name, queue_name, v
     return example_cmd
 
 def submit_pipeline_step(script_path, params_lists, tmp_dir, job_name, queue_name, verbose, new_line_delimiter='!@#',
-                         q_submitter_script_path='/bioseq/bioSequence_scripts_and_constants/q_submitter_power.py',
+                         q_submitter_script_path=global_params.qsub_script,
                          required_modules_as_list=None, num_of_cpus=1, executable='python', done_path = None):
     if done_path and os.path.exists(done_path):
         process, example_cmd = create_command(**locals())
