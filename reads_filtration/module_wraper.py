@@ -140,10 +140,10 @@ if __name__ == '__main__':
     parser.add_argument('min_sequencing_quality', type=int, default=38,
                         help='Minimum average sequencing threshold allowed after filtration'
                              'for more details, see: https://en.wikipedia.org/wiki/Phred_quality_score')
-    parser.add_argument('done_file_path', help='A path to a file that signals that the module finished running successfully.')
+    #parser.add_argument('done_file_path', help='A path to a file that signals that the module finished running successfully.')
     parser.add_argument('minimal_length_required', default=3, type=int,
                         help='Shorter peptides will be discarded')
-
+    parser.add_argument('done_file_path', help='A path to a file that signals that the module finished running successfully.')
     parser.add_argument('--error_path', type=str, help='a file in which errors will be written to')
     parser.add_argument('--gz', action='store_true', help='gzip fastq, filtration_log, fna, and faa files')
     parser.add_argument('-q', '--queue', default='pupkoweb', type=str, help='a queue to which the jobs will be submitted')
