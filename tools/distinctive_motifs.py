@@ -136,17 +136,17 @@ def extract_distinctive_motifs(count: int, epsilon: float, feature_importance_pa
 
 
 if __name__ == '__main__':
-    base_path = '/mnt/d/workspace/data/webiks/igome/results/exp4+9_all_half_gaps/model_fitting'
+    base_path = '/home/shenson/Deep_Panning/DP_fix_rf/analysis/model_fitting'
     count = 1000
     epsilon = 0
-    feature_importance_path = path.join(base_path, 'Naive/Naive_values_exp9_model/best_model/sorted_feature_importance.txt')
-    values_path = path.join(base_path, 'Naive/Naive_values_exp9.csv')
-    hits_path = path.join(base_path, 'Naive/Naive_hits_exp9.csv')
+    feature_importance_path = path.join(base_path, 'BP087_77/BP087_77_values_model/best_model/sorted_feature_importance.txt')
+    values_path = path.join(base_path, 'BP087_77/BP087_77_values.csv')
+    hits_path = path.join(base_path, 'BP087_77/BP087_77_hits.csv')
     invalid_mix = None # 'naive'
     min_importance_score = 0
-    output_base_path = path.join(base_path, 'Naive/distinctive_motifs_all')
-    heatmap_title = 'Exp8 Naive Distinctive Motifs (all)'
-    
+    output_base_path = path.join(base_path, 'BP087_77/distinctive_motifs_all')
+    heatmap_title = 'BP087_77 Distinctive Motifs (all)'
+   
     motifs, last_index, perfect_count, artifact_count, invalid_mix_count, mixed_count = extract_distinctive_motifs(count, epsilon, feature_importance_path, values_path, hits_path, invalid_mix, min_importance_score, output_base_path, heatmap_title)
     print(f'\nDistinctive motifs ({len(motifs)}/{last_index} tested): {motifs}')
     print(f'Perfects count: {perfect_count}')
