@@ -142,7 +142,7 @@ if __name__ == '__main__':
     feature_importance_path = path.join(base_path, 'BP087_77/BP087_77_values_model/best_model/sorted_feature_importance.txt')
     values_path = path.join(base_path, 'BP087_77/BP087_77_values.csv')
     hits_path = path.join(base_path, 'BP087_77/BP087_77_hits.csv')
-    invalid_mix = None # 'naive'
+    invalid_mix = 'BP087_0' # 'naive'
     min_importance_score = 0
     output_base_path = path.join(base_path, 'BP087_77/distinctive_motifs_all')
     heatmap_title = 'BP087_77 Distinctive Motifs (all)'
